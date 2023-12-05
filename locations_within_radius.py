@@ -2,7 +2,7 @@ import argparse
 import json
 import math
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytz
 
@@ -38,7 +38,7 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 
     return R * c
 
-# Function to convert timestamp to a different timezone and make it human-readable
+# Function to convert timestamp to a different timezone and return a datetime object
 def convert_timestamp(time_string, timezone_name):
     # Try parsing the timestamp with and without milliseconds
     for fmt in ["%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"]:
@@ -51,10 +51,19 @@ def convert_timestamp(time_string, timezone_name):
     else:
         raise ValueError(f"time data '{time_string}' does not match format with or without milliseconds")
 
+    # Test case for when timestamp fails to convert
+    # raise ValueError(f"Test when timestamp fails to convert")
+
     utc_time = utc_time.replace(tzinfo=pytz.utc)
     target_timezone = pytz.timezone(timezone_name)
-    local_time = utc_time.astimezone(target_timezone)
-    return local_time.strftime("%Y-%m-%d %H:%M:%S %Z (%A)")
+    return utc_time.astimezone(target_timezone)
+
+# Function to get the difference in hours between two timestamps
+def get_hours_difference(start, end):
+    fmt = "%Y-%m-%d %H:%M:%S %Z (%A)"
+    start_dt = datetime.strptime(start, fmt)
+    end_dt = datetime.strptime(end, fmt)
+    return (end_dt - start_dt).total_seconds() / 3600
 
 # Load JSON data (assuming it's stored in a file named 'Records.json' in the current directory)
 FILENAME = 'Records.json'
@@ -85,35 +94,57 @@ for location in data['locations']:
 
     # If the location is within the specified radius, process it
     if distance <= radius_km:
+        # When timezone is provided, only the datetime objects are stored and processed
         if args.timezone:
-            # Convert the timestamp
+            # Convert the timestamp to a datetime object
             try:
-                human_readable_timestamp = convert_timestamp(location['timestamp'], args.timezone)
-                # Extract the date (local time) from the human_readable_timestamp
-                local_date = human_readable_timestamp.split()[0]
+                location_datetime = convert_timestamp(location['timestamp'], args.timezone)
+                local_date = location_datetime.strftime("%Y-%m-%d %H:%M:%S %Z (%A)")
                 # Add location to its corresponding date's list
-                daily_locations[local_date].append((distance, human_readable_timestamp, location_lat, location_long))
+                day = local_date.split()[0]  # key for daily_locations dictionary
+                daily_locations[day].append((distance, location_datetime, location_lat, location_long))
             except Exception as e:
                 print(f"Error converting and processing timestamp: {e}")
                 # Set to 'N/A' because we don't want to skip any location instance (the lat/long will be useful for debugging)
                 # and we want to be explicit, so we don't accidentally use the wrong timestamp
-                human_readable_timestamp = 'N/A'
+                local_date = 'N/A'
         else:
-            human_readable_timestamp = location['timestamp']
+            local_date = location['timestamp']
 
         # If not in first/last mode, print every location
         if not args.perday:
-            print(f"Location within {radius_km} km: lat={location_lat}, long={location_long}, timestamp={human_readable_timestamp}")
+            print(f"Location within {radius_km} km: lat={location_lat}, long={location_long}, timestamp={local_date}")
+
+time_differences = {}  # Store time differences for each date
 
 # If in first/last mode, process the dictionary to print the first and last location for each day
 if args.perday:
     for date, locations in daily_locations.items():
-        if len(locations) == 1:
-            # If there's only one location for the day, print it
-            _, timestamp, lat, long = locations[0]
-            print(f"Location within {radius_km} km: lat={lat}, long={long}, timestamp={timestamp}")
-        else:
-            # Print the first and last location for the day
-            for _, timestamp, lat, long in (locations[0], locations[-1]):
-                print(f"Location within {radius_km} km: lat={lat}, long={long}, timestamp={timestamp}")
+        first = locations[0]
+        last = locations[-1]
+
+        # Print the first (and last if different) location instance
+        for location in [first, (last if first != last else None)]:
+            if location is not None:
+                _, location_datetime, lat, long = location
+                print(f"Location within {radius_km} km: lat={lat}, long={long}, timestamp={location_datetime.strftime('%Y-%m-%d %H:%M:%S %Z (%A)')}")
+
+        # Calculate the time difference between the first and last location for this date
+        if first != last:
+            time_diff = (last[1] - first[1]).total_seconds() / 3600
+            print(f"Time spent in vicinity: {time_diff:.2f} hours")
+            time_differences[date] = time_diff
+
         print()
+
+# At the end, print the top days with the longest time spent in vicinity
+if time_differences:
+    time_differences = sorted(time_differences.items(), key=lambda x: x[1], reverse=True)
+
+    # top = min(15, len(time_differences))  # print top days
+    top = len(time_differences) // 4  # print top days
+
+    # print top longest
+    print(f"Top {top} longest time spent in vicinity:")
+    for date, hours in time_differences[:top]:
+        print(f"{date}: {hours:.2f} hours")
