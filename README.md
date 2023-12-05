@@ -1,4 +1,4 @@
-# Google Location History Tools
+# Google Location History Scripts
  Some short scripts to parse Records.json from a Location History takeout in Google Account settings
 
 | File | Description |
