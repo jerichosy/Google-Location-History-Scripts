@@ -72,8 +72,7 @@ with open(FILENAME, 'r') as file:
     data = json.load(file)
 
 # Prompt user for latitude, longitude, and radius
-user_lat = float(input("Please enter latitude: "))
-user_long = float(input("Please enter longitude: "))
+user_lat, user_long = map(float, input("Please enter latitude and longitude (comma separated): ").split(","))
 radius_km = float(input("Please enter radius in kilometers: "))
 
 # Create a dictionary to store lists of locations for each date
